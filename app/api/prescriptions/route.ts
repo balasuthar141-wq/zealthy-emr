@@ -1,27 +1,58 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { PrismaClient } from "@prisma/client";
 
-// =====================================================
-// GET PRESCRIPTIONS
-// =====================================================
+const prisma = new PrismaClient();
 
+/**
+ * GET /api/prescriptions
+ *
+ * Without patientId:
+ *   Returns ALL prescriptions.
+ *
+ * With patientId:
+ *   Returns prescriptions for that specific patient.
+ *
+ * Examples:
+ *   /api/prescriptions
+ *   /api/prescriptions?patientId=4
+ */
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const patientId = url.searchParams.get("patientId");
 
-    // -------------------------------------------------
-    // ADMIN: GET ALL PRESCRIPTIONS
-    // GET /api/prescriptions
-    // -------------------------------------------------
+    // --------------------------------------------------
+    // GET PRESCRIPTIONS FOR A SPECIFIC PATIENT
+    // --------------------------------------------------
+    if (patientId) {
+      const id = Number(patientId);
 
-    if (!patientId) {
+      if (Number.isNaN(id)) {
+        return NextResponse.json(
+          { error: "Invalid patient ID." },
+          { status: 400 }
+        );
+      }
+
+      const patient = await prisma.patient.findUnique({
+        where: {
+          id,
+        },
+      });
+
+      if (!patient) {
+        return NextResponse.json(
+          { error: "Patient not found." },
+          { status: 404 }
+        );
+      }
+
       const prescriptions = await prisma.prescription.findMany({
+        where: {
+          patientId: id,
+        },
         orderBy: {
           refillOn: "asc",
-        },
-        include: {
-          patient: true,
         },
       });
 
@@ -30,50 +61,13 @@ export async function GET(request: Request) {
       });
     }
 
-    // -------------------------------------------------
-    // PATIENT: GET PRESCRIPTIONS FOR ONE PATIENT
-    // GET /api/prescriptions?patientId=1
-    // -------------------------------------------------
-
-    const id = Number(patientId);
-
-    if (Number.isNaN(id)) {
-      return NextResponse.json(
-        {
-          error: "Invalid patient ID.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const patient = await prisma.patient.findUnique({
-      where: {
-        id,
-      },
-    });
-
-    if (!patient) {
-      return NextResponse.json(
-        {
-          error: "Patient not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
+    // --------------------------------------------------
+    // GET ALL PRESCRIPTIONS
+    // Used by the Admin page
+    // --------------------------------------------------
     const prescriptions = await prisma.prescription.findMany({
-      where: {
-        patientId: id,
-      },
       orderBy: {
         refillOn: "asc",
-      },
-      include: {
-        patient: true,
       },
     });
 
@@ -87,17 +81,16 @@ export async function GET(request: Request) {
       {
         error: "Unable to fetch prescriptions.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
 
-// =====================================================
-// CREATE PRESCRIPTION
-// =====================================================
-
+/**
+ * POST /api/prescriptions
+ *
+ * Creates a new prescription.
+ */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -106,122 +99,70 @@ export async function POST(request: Request) {
       patientId,
       medication,
       dosage,
-      quantity,
+      instructions,
       refillOn,
-      refillSchedule,
     } = body;
 
-    // -------------------------------------------------
+    // --------------------------------------------------
     // VALIDATION
-    // -------------------------------------------------
-
-    if (
-      !patientId ||
-      !medication ||
-      !dosage ||
-      quantity === undefined ||
-      quantity === null ||
-      !refillOn ||
-      !refillSchedule
-    ) {
+    // --------------------------------------------------
+    if (!patientId) {
       return NextResponse.json(
-        {
-          error:
-            "Patient, medication, dosage, quantity, refill date, and refill schedule are required.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Patient ID is required." },
+        { status: 400 }
       );
     }
 
-    const parsedPatientId = Number(patientId);
-    const parsedQuantity = Number(quantity);
-    const parsedRefillOn = new Date(refillOn);
-
-    if (Number.isNaN(parsedPatientId)) {
+    if (!medication) {
       return NextResponse.json(
-        {
-          error: "Invalid patient ID.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Medication is required." },
+        { status: 400 }
       );
     }
 
-    if (
-      Number.isNaN(parsedQuantity) ||
-      parsedQuantity <= 0
-    ) {
+    const id = Number(patientId);
+
+    if (Number.isNaN(id)) {
       return NextResponse.json(
-        {
-          error: "Quantity must be a positive number.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Invalid patient ID." },
+        { status: 400 }
       );
     }
 
-    if (Number.isNaN(parsedRefillOn.getTime())) {
-      return NextResponse.json(
-        {
-          error: "Invalid refill date.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // -------------------------------------------------
+    // --------------------------------------------------
     // CHECK PATIENT EXISTS
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     const patient = await prisma.patient.findUnique({
       where: {
-        id: parsedPatientId,
+        id,
       },
     });
 
     if (!patient) {
       return NextResponse.json(
-        {
-          error: "Patient not found.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Patient not found." },
+        { status: 404 }
       );
     }
 
-    // -------------------------------------------------
+    // --------------------------------------------------
     // CREATE PRESCRIPTION
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     const prescription = await prisma.prescription.create({
       data: {
-        patientId: parsedPatientId,
-        medication: String(medication),
-        dosage: String(dosage),
-        quantity: parsedQuantity,
-        refillOn: parsedRefillOn,
-        refillSchedule: String(refillSchedule),
-      },
-      include: {
-        patient: true,
+        patientId: id,
+        medication,
+        dosage: dosage || null,
+        instructions: instructions || null,
+        refillOn: refillOn ? new Date(refillOn) : null,
       },
     });
 
     return NextResponse.json(
       {
-        message: "Prescription created successfully.",
         prescription,
       },
-      {
-        status: 201,
-      }
+      { status: 201 }
     );
   } catch (error) {
     console.error("Prescriptions POST error:", error);
@@ -230,17 +171,16 @@ export async function POST(request: Request) {
       {
         error: "Unable to create prescription.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
 
-// =====================================================
-// UPDATE PRESCRIPTION
-// =====================================================
-
+/**
+ * PUT /api/prescriptions
+ *
+ * Updates an existing prescription.
+ */
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
@@ -250,92 +190,32 @@ export async function PUT(request: Request) {
       patientId,
       medication,
       dosage,
-      quantity,
+      instructions,
       refillOn,
-      refillSchedule,
     } = body;
 
-    // -------------------------------------------------
+    // --------------------------------------------------
     // VALIDATION
-    // -------------------------------------------------
-
-    if (
-      !id ||
-      !patientId ||
-      !medication ||
-      !dosage ||
-      quantity === undefined ||
-      quantity === null ||
-      !refillOn ||
-      !refillSchedule
-    ) {
+    // --------------------------------------------------
+    if (!id) {
       return NextResponse.json(
-        {
-          error:
-            "Prescription ID, patient, medication, dosage, quantity, refill date, and refill schedule are required.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Prescription ID is required." },
+        { status: 400 }
       );
     }
 
     const prescriptionId = Number(id);
-    const parsedPatientId = Number(patientId);
-    const parsedQuantity = Number(quantity);
-    const parsedRefillOn = new Date(refillOn);
 
     if (Number.isNaN(prescriptionId)) {
       return NextResponse.json(
-        {
-          error: "Invalid prescription ID.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Invalid prescription ID." },
+        { status: 400 }
       );
     }
 
-    if (Number.isNaN(parsedPatientId)) {
-      return NextResponse.json(
-        {
-          error: "Invalid patient ID.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (
-      Number.isNaN(parsedQuantity) ||
-      parsedQuantity <= 0
-    ) {
-      return NextResponse.json(
-        {
-          error: "Quantity must be a positive number.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (Number.isNaN(parsedRefillOn.getTime())) {
-      return NextResponse.json(
-        {
-          error: "Invalid refill date.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // -------------------------------------------------
+    // --------------------------------------------------
     // CHECK PRESCRIPTION EXISTS
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     const existingPrescription =
       await prisma.prescription.findUnique({
         where: {
@@ -345,59 +225,71 @@ export async function PUT(request: Request) {
 
     if (!existingPrescription) {
       return NextResponse.json(
-        {
-          error: "Prescription not found.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Prescription not found." },
+        { status: 404 }
       );
     }
 
-    // -------------------------------------------------
-    // CHECK PATIENT EXISTS
-    // -------------------------------------------------
+    // --------------------------------------------------
+    // BUILD UPDATE DATA
+    // --------------------------------------------------
+    const updateData: any = {};
 
-    const patient = await prisma.patient.findUnique({
-      where: {
-        id: parsedPatientId,
-      },
-    });
+    if (patientId !== undefined) {
+      const parsedPatientId = Number(patientId);
 
-    if (!patient) {
-      return NextResponse.json(
-        {
-          error: "Patient not found.",
+      if (Number.isNaN(parsedPatientId)) {
+        return NextResponse.json(
+          { error: "Invalid patient ID." },
+          { status: 400 }
+        );
+      }
+
+      const patient = await prisma.patient.findUnique({
+        where: {
+          id: parsedPatientId,
         },
-        {
-          status: 404,
-        }
-      );
+      });
+
+      if (!patient) {
+        return NextResponse.json(
+          { error: "Patient not found." },
+          { status: 404 }
+        );
+      }
+
+      updateData.patientId = parsedPatientId;
     }
 
-    // -------------------------------------------------
+    if (medication !== undefined) {
+      updateData.medication = medication;
+    }
+
+    if (dosage !== undefined) {
+      updateData.dosage = dosage || null;
+    }
+
+    if (instructions !== undefined) {
+      updateData.instructions = instructions || null;
+    }
+
+    if (refillOn !== undefined) {
+      updateData.refillOn = refillOn
+        ? new Date(refillOn)
+        : null;
+    }
+
+    // --------------------------------------------------
     // UPDATE PRESCRIPTION
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     const prescription = await prisma.prescription.update({
       where: {
         id: prescriptionId,
       },
-      data: {
-        patientId: parsedPatientId,
-        medication: String(medication),
-        dosage: String(dosage),
-        quantity: parsedQuantity,
-        refillOn: parsedRefillOn,
-        refillSchedule: String(refillSchedule),
-      },
-      include: {
-        patient: true,
-      },
+      data: updateData,
     });
 
     return NextResponse.json({
-      message: "Prescription updated successfully.",
       prescription,
     });
   } catch (error) {
@@ -407,35 +299,28 @@ export async function PUT(request: Request) {
       {
         error: "Unable to update prescription.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
 
-// =====================================================
-// DELETE PRESCRIPTION
-// =====================================================
-
+/**
+ * DELETE /api/prescriptions?id=1
+ *
+ * Deletes an existing prescription.
+ */
 export async function DELETE(request: Request) {
   try {
-    const body = await request.json();
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
 
-    const { id } = body;
-
-    // -------------------------------------------------
+    // --------------------------------------------------
     // VALIDATION
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     if (!id) {
       return NextResponse.json(
-        {
-          error: "Prescription ID is required.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Prescription ID is required." },
+        { status: 400 }
       );
     }
 
@@ -443,19 +328,14 @@ export async function DELETE(request: Request) {
 
     if (Number.isNaN(prescriptionId)) {
       return NextResponse.json(
-        {
-          error: "Invalid prescription ID.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Invalid prescription ID." },
+        { status: 400 }
       );
     }
 
-    // -------------------------------------------------
+    // --------------------------------------------------
     // CHECK PRESCRIPTION EXISTS
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     const existingPrescription =
       await prisma.prescription.findUnique({
         where: {
@@ -465,19 +345,14 @@ export async function DELETE(request: Request) {
 
     if (!existingPrescription) {
       return NextResponse.json(
-        {
-          error: "Prescription not found.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Prescription not found." },
+        { status: 404 }
       );
     }
 
-    // -------------------------------------------------
+    // --------------------------------------------------
     // DELETE PRESCRIPTION
-    // -------------------------------------------------
-
+    // --------------------------------------------------
     await prisma.prescription.delete({
       where: {
         id: prescriptionId,
@@ -485,6 +360,7 @@ export async function DELETE(request: Request) {
     });
 
     return NextResponse.json({
+      success: true,
       message: "Prescription deleted successfully.",
     });
   } catch (error) {
@@ -494,9 +370,7 @@ export async function DELETE(request: Request) {
       {
         error: "Unable to delete prescription.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
