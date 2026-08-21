@@ -1,43 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const url = new URL(request.url);
-    const patientId = url.searchParams.get("patientId");
-
-    if (!patientId) {
-      return NextResponse.json(
-        { error: "Patient ID is required." },
-        { status: 400 }
-      );
-    }
-
-    const id = Number(patientId);
-
-    if (Number.isNaN(id)) {
-      return NextResponse.json(
-        { error: "Invalid patient ID." },
-        { status: 400 }
-      );
-    }
-
-    const patient = await prisma.patient.findUnique({
-      where: {
-        id,
-      },
-    });
-
-    if (!patient) {
-      return NextResponse.json(
-        { error: "Patient not found." },
-        { status: 404 }
-      );
-    }
-
     const appointments = await prisma.appointment.findMany({
-      where: {
-        patientId: id,
+      include: {
+        patient: true,
       },
       orderBy: {
         datetime: "asc",
@@ -46,10 +14,33 @@ export async function GET(request: Request) {
 
     const now = new Date();
 
-    const upcomingAppointments = appointments.flatMap((appointment) => {
-      let currentDate = new Date(appointment.datetime);
+    const upcomingAppointments = appointments.flatMap(
+      (appointment) => {
+        let currentDate = new Date(appointment.datetime);
 
-      if (appointment.repeat === "none") {
+        if (appointment.repeat === "none") {
+          if (currentDate >= now) {
+            return [
+              {
+                ...appointment,
+                datetime: currentDate,
+              },
+            ];
+          }
+
+          return [];
+        }
+
+        while (currentDate < now) {
+          if (appointment.repeat === "weekly") {
+            currentDate.setDate(currentDate.getDate() + 7);
+          } else if (appointment.repeat === "monthly") {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+          } else {
+            break;
+          }
+        }
+
         if (currentDate >= now) {
           return [
             {
@@ -61,28 +52,7 @@ export async function GET(request: Request) {
 
         return [];
       }
-
-      while (currentDate < now) {
-        if (appointment.repeat === "weekly") {
-          currentDate.setDate(currentDate.getDate() + 7);
-        } else if (appointment.repeat === "monthly") {
-          currentDate.setMonth(currentDate.getMonth() + 1);
-        } else {
-          break;
-        }
-      }
-
-      if (currentDate >= now) {
-        return [
-          {
-            ...appointment,
-            datetime: currentDate,
-          },
-        ];
-      }
-
-      return [];
-    });
+    );
 
     return NextResponse.json({
       appointments: upcomingAppointments,
@@ -112,9 +82,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const numericPatientId = Number(patientId);
+
+    if (Number.isNaN(numericPatientId)) {
+      return NextResponse.json(
+        { error: "Invalid patient ID." },
+        { status: 400 }
+      );
+    }
+
     const patient = await prisma.patient.findUnique({
       where: {
-        id: Number(patientId),
+        id: numericPatientId,
       },
     });
 
@@ -125,12 +104,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const appointmentDate = new Date(datetime);
+
+    if (Number.isNaN(appointmentDate.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid appointment date/time." },
+        { status: 400 }
+      );
+    }
+
     const appointment = await prisma.appointment.create({
       data: {
-        patientId: Number(patientId),
+        patientId: numericPatientId,
         provider,
-        datetime: new Date(datetime),
+        datetime: appointmentDate,
         repeat: repeat || "none",
+      },
+      include: {
+        patient: true,
       },
     });
 
@@ -167,11 +158,25 @@ export async function PUT(request: Request) {
       );
     }
 
-    const existingAppointment = await prisma.appointment.findUnique({
-      where: {
-        id: Number(id),
-      },
-    });
+    const numericAppointmentId = Number(id);
+    const numericPatientId = Number(patientId);
+
+    if (
+      Number.isNaN(numericAppointmentId) ||
+      Number.isNaN(numericPatientId)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid appointment ID or patient ID." },
+        { status: 400 }
+      );
+    }
+
+    const existingAppointment =
+      await prisma.appointment.findUnique({
+        where: {
+          id: numericAppointmentId,
+        },
+      });
 
     if (!existingAppointment) {
       return NextResponse.json(
@@ -182,7 +187,7 @@ export async function PUT(request: Request) {
 
     const patient = await prisma.patient.findUnique({
       where: {
-        id: Number(patientId),
+        id: numericPatientId,
       },
     });
 
@@ -193,15 +198,27 @@ export async function PUT(request: Request) {
       );
     }
 
+    const appointmentDate = new Date(datetime);
+
+    if (Number.isNaN(appointmentDate.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid appointment date/time." },
+        { status: 400 }
+      );
+    }
+
     const appointment = await prisma.appointment.update({
       where: {
-        id: Number(id),
+        id: numericAppointmentId,
       },
       data: {
-        patientId: Number(patientId),
+        patientId: numericPatientId,
         provider,
-        datetime: new Date(datetime),
+        datetime: appointmentDate,
         repeat: repeat || "none",
+      },
+      include: {
+        patient: true,
       },
     });
 
@@ -232,11 +249,21 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const existingAppointment = await prisma.appointment.findUnique({
-      where: {
-        id: Number(id),
-      },
-    });
+    const numericId = Number(id);
+
+    if (Number.isNaN(numericId)) {
+      return NextResponse.json(
+        { error: "Invalid appointment ID." },
+        { status: 400 }
+      );
+    }
+
+    const existingAppointment =
+      await prisma.appointment.findUnique({
+        where: {
+          id: numericId,
+        },
+      });
 
     if (!existingAppointment) {
       return NextResponse.json(
@@ -247,7 +274,7 @@ export async function DELETE(request: Request) {
 
     await prisma.appointment.delete({
       where: {
-        id: Number(id),
+        id: numericId,
       },
     });
 
