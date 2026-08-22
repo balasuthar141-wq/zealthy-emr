@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Patient = {
   id: number;
@@ -80,13 +80,83 @@ export default function Dashboard() {
           return;
         }
 
+        const allAppointments =
+          appointmentData.appointments || [];
+
+        const allPrescriptions =
+          prescriptionData.prescriptions || [];
+
+        /*
+         * Dashboard requirement:
+         * Show only appointments within the next 7 days.
+         */
+
+        const now = new Date();
+
+        const sevenDaysFromNow = new Date(
+          now.getTime() + 7 * 24 * 60 * 60 * 1000
+        );
+
+        const upcomingAppointments =
+          allAppointments.filter(
+            (appointment: Appointment) => {
+              const appointmentDate = new Date(
+                appointment.datetime
+              );
+
+              return (
+                appointmentDate >= now &&
+                appointmentDate <= sevenDaysFromNow
+              );
+            }
+          );
+
+        /*
+         * Dashboard requirement:
+         * Show only prescription refills within
+         * the next 7 days.
+         */
+
+        const upcomingPrescriptions =
+          allPrescriptions.filter(
+            (prescription: Prescription) => {
+              const refillDate = new Date(
+                prescription.refillOn
+              );
+
+              return (
+                refillDate >= now &&
+                refillDate <= sevenDaysFromNow
+              );
+            }
+          );
+
+        /*
+         * Sort appointments chronologically.
+         */
+
+        upcomingAppointments.sort(
+          (a: Appointment, b: Appointment) =>
+            new Date(a.datetime).getTime() -
+            new Date(b.datetime).getTime()
+        );
+
+        /*
+         * Sort prescriptions by refill date.
+         */
+
+        upcomingPrescriptions.sort(
+          (
+            a: Prescription,
+            b: Prescription
+          ) =>
+            new Date(a.refillOn).getTime() -
+            new Date(b.refillOn).getTime()
+        );
+
         setPatient(patientData.patient);
-        setAppointments(
-          appointmentData.appointments || []
-        );
-        setPrescriptions(
-          prescriptionData.prescriptions || []
-        );
+        setAppointments(upcomingAppointments);
+        setPrescriptions(upcomingPrescriptions);
       } catch (error) {
         console.error(error);
         setError("Unable to connect to the server.");
@@ -98,78 +168,6 @@ export default function Dashboard() {
     loadDashboard();
   }, []);
 
-  /*
-   * =====================================================
-   * NEXT 7 DAYS
-   * =====================================================
-   *
-   * The assignment requires the dashboard to show:
-   *
-   * - Appointments within the next 7 days
-   * - Prescription refills within the next 7 days
-   *
-   * The full appointment/prescription pages can still
-   * display the longer schedule.
-   */
-
-  const next7DaysAppointments = useMemo(() => {
-    const now = new Date();
-
-    const sevenDaysFromNow = new Date(now);
-    sevenDaysFromNow.setDate(
-      sevenDaysFromNow.getDate() + 7
-    );
-
-    return appointments
-      .filter((appointment) => {
-        const appointmentDate = new Date(
-          appointment.datetime
-        );
-
-        return (
-          appointmentDate >= now &&
-          appointmentDate <= sevenDaysFromNow
-        );
-      })
-      .sort(
-        (a, b) =>
-          new Date(a.datetime).getTime() -
-          new Date(b.datetime).getTime()
-      );
-  }, [appointments]);
-
-  const next7DaysPrescriptions = useMemo(() => {
-    const now = new Date();
-
-    const sevenDaysFromNow = new Date(now);
-    sevenDaysFromNow.setDate(
-      sevenDaysFromNow.getDate() + 7
-    );
-
-    return prescriptions
-      .filter((prescription) => {
-        const refillDate = new Date(
-          prescription.refillOn
-        );
-
-        return (
-          refillDate >= now &&
-          refillDate <= sevenDaysFromNow
-        );
-      })
-      .sort(
-        (a, b) =>
-          new Date(a.refillOn).getTime() -
-          new Date(b.refillOn).getTime()
-      );
-  }, [prescriptions]);
-
-  /*
-   * =====================================================
-   * LOADING
-   * =====================================================
-   */
-
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -180,19 +178,11 @@ export default function Dashboard() {
     );
   }
 
-  /*
-   * =====================================================
-   * ERROR
-   * =====================================================
-   */
-
   if (error) {
     return (
       <main className="min-h-screen bg-gray-100 flex items-center justify-center px-6">
         <div className="text-center">
-          <p className="text-red-600">
-            {error}
-          </p>
+          <p className="text-red-600">{error}</p>
 
           <a
             href="/"
@@ -204,12 +194,6 @@ export default function Dashboard() {
       </main>
     );
   }
-
-  /*
-   * =====================================================
-   * PAGE
-   * =====================================================
-   */
 
   return (
     <main className="min-h-screen bg-gray-100 px-6 py-10">
@@ -239,18 +223,14 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* =====================================================
-            PATIENT INFORMATION
-        ===================================================== */}
+        {/* PATIENT INFORMATION */}
 
         <section className="mb-6 rounded-2xl bg-white p-6 shadow">
-
           <h2 className="text-xl font-semibold text-gray-900">
             Patient Information
           </h2>
 
           <div className="mt-4 space-y-2 text-gray-600">
-
             <p>
               <strong>Name:</strong>{" "}
               {patient?.name}
@@ -265,19 +245,13 @@ export default function Dashboard() {
               <strong>Patient ID:</strong>{" "}
               {patient?.id}
             </p>
-
           </div>
-
         </section>
 
-        {/* =====================================================
-            UPCOMING APPOINTMENTS
-        ===================================================== */}
+        {/* APPOINTMENTS */}
 
         <section className="mb-6 rounded-2xl bg-white p-6 shadow">
-
           <div className="flex items-center justify-between">
-
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
                 Upcoming Appointments
@@ -294,64 +268,52 @@ export default function Dashboard() {
             >
               View all →
             </a>
-
           </div>
 
-          {next7DaysAppointments.length === 0 ? (
-            <p className="mt-4 text-gray-600">
-              You have no appointments within the next 7 days.
-            </p>
+          {appointments.length === 0 ? (
+            <div className="mt-4 rounded-lg bg-gray-50 p-5">
+              <p className="text-gray-600">
+                You have no appointments within the next 7 days.
+              </p>
+            </div>
           ) : (
             <div className="mt-4 space-y-4">
+              {appointments.map((appointment) => (
+                <div
+                  key={appointment.id}
+                  className="rounded-lg border border-gray-200 p-4"
+                >
+                  <p className="font-semibold text-gray-900">
+                    {appointment.provider}
+                  </p>
 
-              {next7DaysAppointments.map(
-                (appointment) => (
+                  <p className="mt-1 text-gray-600">
+                    {new Date(
+                      appointment.datetime
+                    ).toLocaleString()}
+                  </p>
 
-                  <div
-                    key={appointment.id}
-                    className="rounded-lg border border-gray-200 p-4"
-                  >
-
-                    <p className="font-semibold text-gray-900">
-                      {appointment.provider}
-                    </p>
-
-                    <p className="mt-1 text-gray-600">
-                      {new Date(
-                        appointment.datetime
-                      ).toLocaleString()}
-                    </p>
-
-                    <p className="mt-1 text-sm text-gray-500">
-                      Repeats:{" "}
-                      {appointment.repeat}
-                    </p>
-
-                  </div>
-
-                )
-              )}
-
+                  <p className="mt-1 text-sm text-gray-500">
+                    Repeats:{" "}
+                    {appointment.repeat}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
-
         </section>
 
-        {/* =====================================================
-            PRESCRIPTIONS
-        ===================================================== */}
+        {/* PRESCRIPTIONS */}
 
         <section className="rounded-2xl bg-white p-6 shadow">
-
           <div className="flex items-center justify-between">
-
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
-                Prescription Refills
+                Medication Refills
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Refills scheduled within the next 7 days
+                Refills within the next 7 days
               </p>
             </div>
 
@@ -361,58 +323,50 @@ export default function Dashboard() {
             >
               View all →
             </a>
-
           </div>
 
-          {next7DaysPrescriptions.length === 0 ? (
-            <p className="mt-4 text-gray-600">
-              You have no prescription refills within the next 7 days.
-            </p>
+          {prescriptions.length === 0 ? (
+            <div className="mt-4 rounded-lg bg-gray-50 p-5">
+              <p className="text-gray-600">
+                You have no medication refills within the next 7 days.
+              </p>
+            </div>
           ) : (
             <div className="mt-4 space-y-4">
+              {prescriptions.map((prescription) => (
+                <div
+                  key={prescription.id}
+                  className="rounded-lg border border-gray-200 p-4"
+                >
+                  <p className="font-semibold text-gray-900">
+                    {prescription.medication}
+                  </p>
 
-              {next7DaysPrescriptions.map(
-                (prescription) => (
+                  <p className="mt-1 text-gray-600">
+                    Dosage:{" "}
+                    {prescription.dosage}
+                  </p>
 
-                  <div
-                    key={prescription.id}
-                    className="rounded-lg border border-gray-200 p-4"
-                  >
+                  <p className="mt-1 text-gray-600">
+                    Quantity:{" "}
+                    {prescription.quantity}
+                  </p>
 
-                    <p className="font-semibold text-gray-900">
-                      {prescription.medication}
-                    </p>
+                  <p className="mt-1 text-gray-600">
+                    Next refill:{" "}
+                    {new Date(
+                      prescription.refillOn
+                    ).toLocaleDateString()}
+                  </p>
 
-                    <p className="mt-1 text-gray-600">
-                      Dosage:{" "}
-                      {prescription.dosage}
-                    </p>
-
-                    <p className="mt-1 text-gray-600">
-                      Quantity:{" "}
-                      {prescription.quantity}
-                    </p>
-
-                    <p className="mt-1 text-gray-600">
-                      Next refill:{" "}
-                      {new Date(
-                        prescription.refillOn
-                      ).toLocaleDateString()}
-                    </p>
-
-                    <p className="mt-1 text-sm text-gray-500">
-                      Schedule:{" "}
-                      {prescription.refillSchedule}
-                    </p>
-
-                  </div>
-
-                )
-              )}
-
+                  <p className="mt-1 text-sm text-gray-500">
+                    Schedule:{" "}
+                    {prescription.refillSchedule}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
-
         </section>
 
       </div>
