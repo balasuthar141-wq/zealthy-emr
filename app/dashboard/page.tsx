@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Patient = {
   id: number;
@@ -28,7 +28,6 @@ export default function Dashboard() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -38,9 +37,7 @@ export default function Dashboard() {
         const patientId = localStorage.getItem("patientId");
 
         if (!patientId) {
-          setError(
-            "Patient session not found. Please log in again."
-          );
+          setError("Patient session not found. Please log in again.");
           setLoading(false);
           return;
         }
@@ -56,10 +53,8 @@ export default function Dashboard() {
         ]);
 
         const patientData = await patientResponse.json();
-        const appointmentData =
-          await appointmentResponse.json();
-        const prescriptionData =
-          await prescriptionResponse.json();
+        const appointmentData = await appointmentResponse.json();
+        const prescriptionData = await prescriptionResponse.json();
 
         if (!patientResponse.ok) {
           setError(
@@ -86,84 +81,15 @@ export default function Dashboard() {
         }
 
         setPatient(patientData.patient);
-
-        // =====================================================
-        // NEXT 7 DAYS
-        // =====================================================
-
-        const now = new Date();
-
-        const sevenDaysFromNow = new Date(now);
-        sevenDaysFromNow.setDate(
-          sevenDaysFromNow.getDate() + 7
+        setAppointments(
+          appointmentData.appointments || []
         );
-
-        // =====================================================
-        // FILTER APPOINTMENTS
-        //
-        // Only appointments from now through the next 7 days.
-        // =====================================================
-
-        const upcomingAppointments =
-          (appointmentData.appointments || [])
-            .filter((appointment: Appointment) => {
-              const appointmentDate = new Date(
-                appointment.datetime
-              );
-
-              return (
-                !Number.isNaN(
-                  appointmentDate.getTime()
-                ) &&
-                appointmentDate >= now &&
-                appointmentDate <= sevenDaysFromNow
-              );
-            })
-            .sort(
-              (
-                a: Appointment,
-                b: Appointment
-              ) =>
-                new Date(a.datetime).getTime() -
-                new Date(b.datetime).getTime()
-            );
-
-        // =====================================================
-        // FILTER PRESCRIPTIONS
-        //
-        // Only prescriptions whose refill is between now
-        // and the next 7 days.
-        // =====================================================
-
-        const upcomingPrescriptions =
-          (prescriptionData.prescriptions || [])
-            .filter((prescription: Prescription) => {
-              const refillDate = new Date(
-                prescription.refillOn
-              );
-
-              return (
-                !Number.isNaN(refillDate.getTime()) &&
-                refillDate >= now &&
-                refillDate <= sevenDaysFromNow
-              );
-            })
-            .sort(
-              (
-                a: Prescription,
-                b: Prescription
-              ) =>
-                new Date(a.refillOn).getTime() -
-                new Date(b.refillOn).getTime()
-            );
-
-        setAppointments(upcomingAppointments);
-        setPrescriptions(upcomingPrescriptions);
+        setPrescriptions(
+          prescriptionData.prescriptions || []
+        );
       } catch (error) {
         console.error(error);
-        setError(
-          "Unable to connect to the server."
-        );
+        setError("Unable to connect to the server.");
       } finally {
         setLoading(false);
       }
@@ -172,9 +98,77 @@ export default function Dashboard() {
     loadDashboard();
   }, []);
 
-  // =====================================================
-  // LOADING
-  // =====================================================
+  /*
+   * =====================================================
+   * NEXT 7 DAYS
+   * =====================================================
+   *
+   * The assignment requires the dashboard to show:
+   *
+   * - Appointments within the next 7 days
+   * - Prescription refills within the next 7 days
+   *
+   * The full appointment/prescription pages can still
+   * display the longer schedule.
+   */
+
+  const next7DaysAppointments = useMemo(() => {
+    const now = new Date();
+
+    const sevenDaysFromNow = new Date(now);
+    sevenDaysFromNow.setDate(
+      sevenDaysFromNow.getDate() + 7
+    );
+
+    return appointments
+      .filter((appointment) => {
+        const appointmentDate = new Date(
+          appointment.datetime
+        );
+
+        return (
+          appointmentDate >= now &&
+          appointmentDate <= sevenDaysFromNow
+        );
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.datetime).getTime() -
+          new Date(b.datetime).getTime()
+      );
+  }, [appointments]);
+
+  const next7DaysPrescriptions = useMemo(() => {
+    const now = new Date();
+
+    const sevenDaysFromNow = new Date(now);
+    sevenDaysFromNow.setDate(
+      sevenDaysFromNow.getDate() + 7
+    );
+
+    return prescriptions
+      .filter((prescription) => {
+        const refillDate = new Date(
+          prescription.refillOn
+        );
+
+        return (
+          refillDate >= now &&
+          refillDate <= sevenDaysFromNow
+        );
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.refillOn).getTime() -
+          new Date(b.refillOn).getTime()
+      );
+  }, [prescriptions]);
+
+  /*
+   * =====================================================
+   * LOADING
+   * =====================================================
+   */
 
   if (loading) {
     return (
@@ -186,9 +180,11 @@ export default function Dashboard() {
     );
   }
 
-  // =====================================================
-  // ERROR
-  // =====================================================
+  /*
+   * =====================================================
+   * ERROR
+   * =====================================================
+   */
 
   if (error) {
     return (
@@ -209,20 +205,19 @@ export default function Dashboard() {
     );
   }
 
-  // =====================================================
-  // DASHBOARD
-  // =====================================================
+  /*
+   * =====================================================
+   * PAGE
+   * =====================================================
+   */
 
   return (
     <main className="min-h-screen bg-gray-100 px-6 py-10">
       <div className="mx-auto max-w-5xl">
 
-        {/* =====================================================
-            HEADER
-        ===================================================== */}
+        {/* HEADER */}
 
         <div className="mb-8 flex items-center justify-between">
-
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
               Welcome, {patient?.name}!
@@ -242,7 +237,6 @@ export default function Dashboard() {
           >
             Logout
           </button>
-
         </div>
 
         {/* =====================================================
@@ -278,7 +272,6 @@ export default function Dashboard() {
 
         {/* =====================================================
             UPCOMING APPOINTMENTS
-            NEXT 7 DAYS ONLY
         ===================================================== */}
 
         <section className="mb-6 rounded-2xl bg-white p-6 shadow">
@@ -291,7 +284,7 @@ export default function Dashboard() {
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Appointments in the next 7 days
+                Appointments within the next 7 days
               </p>
             </div>
 
@@ -304,38 +297,40 @@ export default function Dashboard() {
 
           </div>
 
-          {appointments.length === 0 ? (
+          {next7DaysAppointments.length === 0 ? (
             <p className="mt-4 text-gray-600">
-              You have no appointments in the next 7 days.
+              You have no appointments within the next 7 days.
             </p>
           ) : (
             <div className="mt-4 space-y-4">
 
-              {appointments.map((appointment) => (
+              {next7DaysAppointments.map(
+                (appointment) => (
 
-                <div
-                  key={appointment.id}
-                  className="rounded-lg border border-gray-200 p-4"
-                >
+                  <div
+                    key={appointment.id}
+                    className="rounded-lg border border-gray-200 p-4"
+                  >
 
-                  <p className="font-semibold text-gray-900">
-                    {appointment.provider}
-                  </p>
+                    <p className="font-semibold text-gray-900">
+                      {appointment.provider}
+                    </p>
 
-                  <p className="mt-1 text-gray-600">
-                    {new Date(
-                      appointment.datetime
-                    ).toLocaleString()}
-                  </p>
+                    <p className="mt-1 text-gray-600">
+                      {new Date(
+                        appointment.datetime
+                      ).toLocaleString()}
+                    </p>
 
-                  <p className="mt-1 text-sm text-gray-500">
-                    Repeats:{" "}
-                    {appointment.repeat}
-                  </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Repeats:{" "}
+                      {appointment.repeat}
+                    </p>
 
-                </div>
+                  </div>
 
-              ))}
+                )
+              )}
 
             </div>
           )}
@@ -343,8 +338,7 @@ export default function Dashboard() {
         </section>
 
         {/* =====================================================
-            PRESCRIPTION REFILLS
-            NEXT 7 DAYS ONLY
+            PRESCRIPTIONS
         ===================================================== */}
 
         <section className="rounded-2xl bg-white p-6 shadow">
@@ -353,11 +347,11 @@ export default function Dashboard() {
 
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
-                Medication Refills
+                Prescription Refills
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Refills scheduled in the next 7 days
+                Refills scheduled within the next 7 days
               </p>
             </div>
 
@@ -370,49 +364,51 @@ export default function Dashboard() {
 
           </div>
 
-          {prescriptions.length === 0 ? (
+          {next7DaysPrescriptions.length === 0 ? (
             <p className="mt-4 text-gray-600">
-              You have no medication refills in the next 7 days.
+              You have no prescription refills within the next 7 days.
             </p>
           ) : (
             <div className="mt-4 space-y-4">
 
-              {prescriptions.map((prescription) => (
+              {next7DaysPrescriptions.map(
+                (prescription) => (
 
-                <div
-                  key={prescription.id}
-                  className="rounded-lg border border-gray-200 p-4"
-                >
+                  <div
+                    key={prescription.id}
+                    className="rounded-lg border border-gray-200 p-4"
+                  >
 
-                  <p className="font-semibold text-gray-900">
-                    {prescription.medication}
-                  </p>
+                    <p className="font-semibold text-gray-900">
+                      {prescription.medication}
+                    </p>
 
-                  <p className="mt-1 text-gray-600">
-                    Dosage:{" "}
-                    {prescription.dosage}
-                  </p>
+                    <p className="mt-1 text-gray-600">
+                      Dosage:{" "}
+                      {prescription.dosage}
+                    </p>
 
-                  <p className="mt-1 text-gray-600">
-                    Quantity:{" "}
-                    {prescription.quantity}
-                  </p>
+                    <p className="mt-1 text-gray-600">
+                      Quantity:{" "}
+                      {prescription.quantity}
+                    </p>
 
-                  <p className="mt-1 text-gray-600">
-                    Next refill:{" "}
-                    {new Date(
-                      prescription.refillOn
-                    ).toLocaleDateString()}
-                  </p>
+                    <p className="mt-1 text-gray-600">
+                      Next refill:{" "}
+                      {new Date(
+                        prescription.refillOn
+                      ).toLocaleDateString()}
+                    </p>
 
-                  <p className="mt-1 text-sm text-gray-500">
-                    Schedule:{" "}
-                    {prescription.refillSchedule}
-                  </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Schedule:{" "}
+                      {prescription.refillSchedule}
+                    </p>
 
-                </div>
+                  </div>
 
-              ))}
+                )
+              )}
 
             </div>
           )}
